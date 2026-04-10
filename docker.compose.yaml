@@ -1,0 +1,159 @@
+#docker-compose.yml
+services:
+  app:
+    image: httpd
+    environment:
+      - DB_HOST=db
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+      POSTGRES_DB: mydb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+---
+#docker-compose.override.yml
+services:
+  app:
+    build: .
+    volumes:
+      - .:/app                 # Live reload: mount source code
+      - /app/node_modules      # Keep container node_modules
+    environment:
+      - NODE_ENV=development
+      - DEBUG=*
+    ports:
+      - '3000:3000'
+      - '9229:9229'            # Node.js debugger port
+
+  db:
+    ports:
+      - '5432:5432'            # Expose DB locally for dev tools
+
+---
+#docker-compose.prod.yml
+services:
+  myapp:
+    image: nginx
+    restart: always
+    environment:
+      - NODE_ENV=production
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+#docker-compose -f docker-compose.prod.yml up -d 
+#docker-compose -f docker-compose.prod.yml down
+
+---
+#multi-dependecies
+services:
+  myapp:
+    image: nginx
+    restart: always
+    environment:
+      - NODE_ENV=production
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    depends_on:
+      db:
+        condition: service_healthy   # Wait for db to be healthy
+      redis:
+        condition: service_started   # Just wait for start
+
+  db:
+    image: postgres:16-alpine
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
+      interval: 10s        # Check every 10 seconds
+      timeout: 5s          # Fail if no response in 5s
+      retries: 5           # Mark unhealthy after 5 failures
+      start_period: 30s    # Grace period on first start
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"] #systemctl status apache2
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+---
+#network-attachment
+services:
+  frontend:
+    image: nginx:alpine
+    networks:
+      - frontend-net
+      - backend-net
+    ports:
+      - '80:80'
+
+  api:
+    image: node:18-alpine
+    command: sh -c "npm install -g json-server && json-server --watch /data/db.json --host 0.0.0.0 --port 3000"
+    volumes:
+      - ./data:/data
+    networks:
+      - backend-net
+      - db-net
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+      POSTGRES_DB: mydb
+    networks:
+      - db-net
+
+networks:
+  frontend-net:
+    driver: bridge
+  backend-net:
+    driver: bridge
+  db-net:
+    driver: bridge
+    internal: true
+---
+
+#volume attachment
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+      POSTGRES_DB: mydb
+    volumes:
+      # Named volume (managed by Docker)
+      - pgdata:/var/lib/postgresql/data
+      # Bind mount (absolute host path)
+      - /host/backups:/backups
+
+volumes:
+  pgdata:
+    driver: local
+    # Use a specific path on the host:
+    driver_opts:
+      type: none
+      o: bind
+      device: /data/postgres
+
+
+
+
