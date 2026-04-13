@@ -153,6 +153,105 @@ volumes:
       type: none
       o: bind
       device: /data/postgres
+---
+
+Advanced Compose Features
+1)Environment Variables & .env Files
+=======================================
+# .env file (auto-loaded by Compose):
+POSTGRES_USER: postgres
+POSTGRES_PASSWORD: postgres123
+POSTGRES_DB: mydb
+
+# .env.development (load manually):
+POSTGRES_USER=admin
+POSTGRES_PASSWORD=Admin123
+POSTGRES_DB=mypostgresdb
+
+# Load a custom env file:
+docker compose --env-file .env.development up -d
+
+2)Profiles: Conditional Services
+=====================================
+services:
+  app:
+    image: nginx
+    # No profile = always started
+
+  adminer:
+    image: adminer
+    profiles: [debug]        # Only start with --profile debug
+    ports:
+      - '8080:8080'
+
+  seeder:
+    image: node.js
+    profiles: [tools]
+    command: node scripts/seed.js
+
+docker-compose --profile debug up
+# Usage:
+# docker compose up                    # starts only app
+# docker compose --profile debug up    # starts app + adminer
+# docker compose --profile tools run seeder  # run seeder
+
+3)Resource Limits & Restart Policies
+======================================
+services:
+  app:
+    image: myapp:latest
+    restart: unless-stopped   # always | on-failure | unless-stopped | no
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+4)Extending Services with Anchors
+=======================================
+# Use YAML anchors to avoid repetition:
+x-common: &common
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: '10m'
+      max-file: '3'
+
+services:
+  app:
+    <<: *common
+    image: myapp:latest
+
+  worker:
+    <<: *common
+    image: myapp:latest
+    command: node worker.js
+
+example-1
+===========
+version: '3.8'
+
+services:
+  container1:
+    image: nginx:latest
+    ports:
+      - "8001:80"
+
+  container2:
+    image: mysql:latest
+    environment:
+      MYSQL_ROOT_PASSWORD: example
+      MYSQL_DATABASE: mydatabase
+
+  container3:
+    image: ubuntu:latest
+    command: tail -f /dev/null  # Keep the container running indefinitely
+    tty: true  # Allocate a pseudo-TTY
+    stdin_open: true  # Keep STDIN open so you can interact with the container
 
 
 
