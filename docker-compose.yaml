@@ -158,6 +158,10 @@ volumes:
 Advanced Compose Features
 1)Environment Variables & .env Files
 =======================================
+
+ env_file:
+      - .env
+
 # .env file (auto-loaded by Compose):
 POSTGRES_USER:postgres
 POSTGRES_PASSWORD:postgres123
