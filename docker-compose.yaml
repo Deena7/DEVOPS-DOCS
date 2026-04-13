@@ -159,9 +159,9 @@ Advanced Compose Features
 1)Environment Variables & .env Files
 =======================================
 # .env file (auto-loaded by Compose):
-POSTGRES_USER: postgres
-POSTGRES_PASSWORD: postgres123
-POSTGRES_DB: mydb
+POSTGRES_USER:postgres
+POSTGRES_PASSWORD:postgres123
+POSTGRES_DB:mydb
 
 # .env.development (load manually):
 POSTGRES_USER=admin
