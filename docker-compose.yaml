@@ -175,6 +175,14 @@ POSTGRES_DB=mypostgresdb
 # Load a custom env file:
 docker compose --env-file .env.development up -d
 
+#dynamic env var
+services:
+  app:
+    image: myapp:${APP_VERSION}
+
+#in .env file
+APP_VERSION=v1.2
+
 2)Profiles: Conditional Services
 =====================================
 services:
@@ -234,6 +242,18 @@ services:
     <<: *common
     image: myapp:latest
     command: node worker.js
+
+5)password stored as screts
+=============================
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt
+
+services:
+  db:
+    image: postgres
+    secrets:
+      - db_password
 
 example-1
 ===========
