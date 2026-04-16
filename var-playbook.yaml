@@ -1,0 +1,87 @@
+file structure
+-----------------
+ansible-project/
+│
+├── inventory.ini
+├── playbook.yml
+├── vars.yml
+└── templates/
+      nginx.conf.j2
+
+
+variable.yaml
+---------------
+app_name: myapp
+http_port: 8080
+server_admin: sample@gmail.com
+
+nginx.config.j2
+-------------------
+server {
+    listen {{ http_port }};
+    server_name localhost;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+    }
+
+    error_log /var/log/nginx/{{ app_name }}.error.log; #myapp.error.log
+    access_log /var/log/nginx/{{ app_name }}.access.log; #myapp.access.log
+}
+
+playbook.yaml:
+================
+---
+- name: Install and configure nginx
+  hosts: all
+  become: yes
+  vars_files:
+    - variable.yaml
+
+  tasks:
+    - name: Install nginx
+      apt:
+        name: nginx
+        state: present
+        update_cache: yes
+
+    - name: Deploy nginx configuration using template
+      template:
+        src: nginx.conf.j2
+        dest: /etc/nginx/conf.d/myapp.conf
+
+    - name: Restart nginx
+      service:
+        name: nginx
+        state: restarted
+
+---
+
+
+- name: Install required packages
+  hosts: web
+  become: yes
+
+  vars:
+    packages:
+      - apache2
+      - nmon
+      - ruby-full
+
+  tasks:
+
+  - name: Update apt repo
+    apt:
+      update_cache: yes
+
+  - name: Install packages
+    apt:
+      name: "{{ packages }}"
+      state: present
+
+  - name: Start Apache
+    service:
+      name: apache2
+      state: started
+      enabled: yes
+
