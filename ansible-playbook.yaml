@@ -1,0 +1,19 @@
+- hosts: all
+  remote_user: ec2-user
+  become: yes
+  tasks:
+  - name: INSTALLING A apache  
+    yum:
+     name: httpd
+     state: present
+  - name: starting A apache   
+    servie:
+     name: httpd
+     state: started
+  - name: cpoying the file
+    copy:
+      src: index.html 
+      dest: /var/www/html/index.html
+      mode: '777'
+  #T1 : install nmon,docker,ruby  -  uninstall a packages  -
+  #T2 :  move a file from master to save
