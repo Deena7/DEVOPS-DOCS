@@ -1,0 +1,218 @@
+3-TIER ARCHITECTURE USING DOCKER CONTANER
+=========================================
+
+DIRECTORY-STRCTURE 
+========================
+├── backend
+│   ├── Dockerfile
+│   ├── package.json
+│   └── server.js
+├── db
+│   └── init.sql
+├── docker-compose.yml
+└── frontend
+    ├── Dockerfile
+    └── src
+        └── index.html
+
+frontend scripts:
+=================================================
+src/index.html  
+
+<!DOCTYPE html>
+<html>
+<body>
+
+<h2>Login</h2>
+
+<form id="form">
+  Username: <input id="user"><br><br>
+  Password: <input id="pass" type="password"><br><br>
+  <button type="submit">Submit</button>
+</form>
+
+<script>
+document.getElementById("form").addEventListener("submit", async e => {
+  e.preventDefault();
+
+  await fetch("http://13.229.199.53:3000/login", {     #change ip address
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({
+      username: user.value,
+      password: pass.value
+    })
+  });
+
+  alert("Saved!");
+});
+</script>
+
+</body>
+</html>
+
+
+frontend/Dockerfile
+=========================================
+FROM nginx:alpine
+COPY src /usr/share/nginx/html
+
+
+backend/server.js
+========================================================
+const express = require("express");
+const mysql = require("mysql2");
+const cors = require("cors");
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+let db;
+
+function handleDisconnect() {
+  db = mysql.createConnection({
+    host: "db",
+    user: "root",
+    password: "root",
+    database: "appdb"
+  });
+
+  db.connect(err => {
+    if (err) {
+      console.log("DB not ready, retrying in 5 sec...");
+      setTimeout(handleDisconnect, 5000);
+    } else {
+      console.log("DB connected");
+    }
+  });
+
+  db.on("error", err => {
+    console.log("DB error:", err.code);
+    if (err.code === "PROTOCOL_CONNECTION_LOST" || err.code === "ECONNREFUSED") {
+      handleDisconnect();
+    } else {
+      throw err;
+    }
+  });
+}
+
+handleDisconnect();
+
+app.post("/login", (req,res)=>{
+  const {username,password} = req.body;
+
+  db.query(
+    "INSERT INTO users(username,password) VALUES (?,?)",
+    [username,password],
+    err => {
+      if(err) return res.status(500).send("DB Error");
+      res.send("saved");
+    }
+  );
+});
+
+app.listen(3000, ()=> console.log("Backend running"));
+
+
+backend/package.json
+========================
+
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "dependencies": {
+    "express": "^4.18.2",
+    "mysql2": "^3.6.0",
+    "cors": "^2.8.5"
+  }
+}
+
+backend/Dockerfile
+==================================
+FROM node:18
+WORKDIR /app
+COPY package.json .
+RUN npm install
+COPY server.js .
+CMD ["node","server.js"]
+
+db/init.sql
+=================================
+CREATE DATABASE appdb;
+
+USE appdb;
+
+CREATE TABLE users (
+ id INT AUTO_INCREMENT PRIMARY KEY,
+ username VARCHAR(100),
+ password VARCHAR(100)
+);
+
+
+
+docker-compose.yaml
+===============================
+version: "3.8"
+
+services:
+
+ frontend:
+   build: frontend
+   ports:
+     - "80:80"
+   depends_on:
+     backend:
+       condition: service_started
+
+ backend:
+   build: backend
+   ports:
+     - "3000:3000"
+   depends_on:
+     db:
+       condition: service_healthy
+   restart: always
+
+ db:
+   image: mysql:8
+   environment:
+     MYSQL_ROOT_PASSWORD: root
+   volumes:
+     - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+   healthcheck:
+     test: ["CMD","mysqladmin","ping","-uroot","-proot"]
+     interval: 5s
+     timeout: 5s
+     retries: 5
+
+
+finally,
+============
+sudo apt-get update -y
+apt install docker.io -y
+docker --version
+mkdir sampleapp
+apt install docker-compose -y
+docker-compose up -d --build
+curl http://localhost
+docker logs sampleapp_frontend_1
+docker exec -it sampleapp_db_1 mysql -uroot -proot
+    |
+    ----->mysql>show databases;
+                use appdb;
+                show tables;
+                select * from users; 
+           
+curl -X POST http://localhost:3000/login -H "Content-Type: application/json" -d '{"username":"deena","password":"123"}'
+docker-compose down -v
+docker system prune -af
+
+
+
+
+
+
+
+
+
