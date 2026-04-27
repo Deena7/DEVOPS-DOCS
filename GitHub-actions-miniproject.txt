@@ -504,6 +504,9 @@ deploy.sh on EC2	          EC2 extracts archive, runs npm install --omit=dev, re
 Verify  Deployment
 ======================================
 Check PM2 Status (on EC2)
+#check a backend as ubuntu user
+sudo su - ubuntu
+
 # List running PM2 apps
 pm2 list
  
