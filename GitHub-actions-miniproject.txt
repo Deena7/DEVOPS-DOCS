@@ -1,0 +1,553 @@
+my-app/                          <-- Root of your GitHub repo
+├── .github/
+│   └── workflows/
+│       └── deploy.yml           <-- GitHub Actions workflow
+├── public/                      <-- Static assets (served directly)
+│   ├── index.html
+│   └── style.css
+├── src/                         <-- Application source code
+│   ├── app.js                   <-- Main Express server
+│   └── routes/
+│       └── api.js
+├── scripts/
+│   └── deploy.sh                <-- Remote deploy script (runs on EC2)
+├── .gitignore
+├── ecosystem.config.js          <-- PM2 process config
+└── package.json
+
+
+public/index.html
+=========================
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>My Node.js App</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header>
+    <h1>My Node.js App</h1>
+    <p id="deploy-info">Loading deployment info...</p>
+  </header>
+  <main>
+    <div class="card">
+      <h2>Server Status</h2>
+      <div id="status" class="status-badge">Checking...</div>
+    </div>
+    <div class="card">
+      <h2>API Test</h2>
+      <button id="fetch-btn" onclick="fetchData()">Fetch Data</button>
+      <pre id="api-result"></pre>
+    </div>
+  </main>
+  <script>
+    fetch('/api/info')
+      .then(r => r.json())
+      .then(d => {
+        document.getElementById('deploy-info').textContent =
+          `Deployed: ${d.deployedAt} | Version: ${d.version}`;
+        document.getElementById('status').textContent = 'Online';
+        document.getElementById('status').classList.add('online');
+      });
+    function fetchData() {
+      fetch('/api/data')
+        .then(r => r.json())
+        .then(d => {
+          document.getElementById('api-result').textContent =
+            JSON.stringify(d, null, 2);
+        });
+    }
+  </script>
+</body>
+</html>
+
+
+public/style.css (68-135)
+=================================================================================
+* { box-sizing: border-box; margin: 0; padding: 0; }
+ 
+body {
+  font-family: 'Segoe UI', Arial, sans-serif;
+  background: #f0f4f8;
+  color: #1a1a2e;
+}
+ 
+header {
+  background: linear-gradient(135deg, #1E4A9C, #0D2F6B);
+  color: white;
+  padding: 2rem;
+  text-align: center;
+}
+ 
+header h1 { font-size: 2rem; margin-bottom: 0.5rem; }
+header p  { opacity: 0.8; font-size: 0.9rem; }
+ 
+main {
+  display: flex;
+  gap: 1.5rem;
+  padding: 2rem;
+  max-width: 960px;
+  margin: 0 auto;
+  flex-wrap: wrap;
+}
+ 
+.card {
+  background: white;
+  border-radius: 12px;
+  padding: 1.5rem;
+  flex: 1 1 320px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+ 
+.card h2 { margin-bottom: 1rem; color: #1E4A9C; }
+ 
+.status-badge {
+  display: inline-block;
+  padding: 0.4rem 1rem;
+  border-radius: 20px;
+  background: #eee;
+  font-weight: bold;
+}
+ 
+.status-badge.online { background: #d6f0e4; color: #1a7a4a; }
+ 
+button {
+  background: #1E4A9C;
+  color: white;
+  border: none;
+  padding: 0.6rem 1.4rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+ 
+button:hover { background: #0D2F6B; }
+ 
+pre {
+  margin-top: 1rem;
+  background: #f2f4f7;
+  padding: 1rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  overflow-x: auto;
+}
+
+src/app.js  (Express Server)
+========================================
+const express = require('express');
+const path    = require('path');
+ 
+const app  = express();
+const PORT = process.env.PORT || 3000;
+ 
+// Serve static files from /public
+app.use(express.static(path.join(__dirname, '..', 'public')));
+app.use(express.json());
+ 
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', uptime: process.uptime() });
+});
+ 
+// Deployment info endpoint
+app.get('/api/info', (req, res) => {
+  res.json({
+    version:    process.env.APP_VERSION || '1.0.0',
+    deployedAt: process.env.DEPLOYED_AT || new Date().toISOString(),
+    nodeVersion: process.version,
+  });
+});
+ 
+// Sample data endpoint
+app.get('/api/data', (req, res) => {
+  res.json({
+    items: ['Apple', 'Banana', 'Cherry'],
+    total: 3,
+    timestamp: new Date().toISOString(),
+  });
+});
+ 
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
+ 
+module.exports = app;
+
+package.json
+===============================================
+{
+  "name": "my-node-app",
+  "version": "1.0.0",
+  "description": "Node.js app deployed via GitHub Actions to EC2",
+  "main": "src/app.js",
+  "scripts": {
+    "start":   "node src/app.js",
+    "dev":     "nodemon src/app.js",
+    "test":    "jest --forceExit --passWithNoTests",
+    "build":   "echo Build step: copy assets if needed"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "jest":    "^29.7.0",
+    "nodemon": "^3.0.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
+
+ecosystem.config.js  (PM2 Config)
+=======================================
+module.exports = {
+  apps: [
+    {
+      name:         'my-node-app',
+      script:       'src/app.js',
+      instances:    1,               // increase for load balancing
+      autorestart:  true,
+      watch:        false,           // never watch in production
+      max_memory_restart: '200M',
+      env: {
+        NODE_ENV:     'production',
+        PORT:         3000,
+      }
+    }
+  ]
+};
+
+# .github/workflows/deploy.yml (226-295)
+==========================================
+# Triggered on every push to the 'main' branch
+ 
+name: Build and Deploy to EC2
+ 
+on:
+  push:
+    branches:
+      - main          # change to 'master' if you use master
+ 
+jobs:
+  build-and-deploy:
+    name: Build on GitHub Runner & Deploy to EC2
+    runs-on: ubuntu-latest          # GitHub's machine, NOT your EC2
+ 
+    steps:
+      # ── Step 1: Check out code ──────────────────────────────────
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+ 
+      # ── Step 2: Set up Node.js (runs on GitHub runner) ──────────
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+ 
+      # ── Step 3: Install dependencies (on GitHub runner) ─────────
+      - name: Install Dependencies
+        run: npm ci
+ 
+      # ── Step 4: Run tests (on GitHub runner) ────────────────────
+      - name: Run Tests
+        run: npm test
+ 
+      # ── Step 5: Build application (on GitHub runner) ────────────
+      - name: Build Application
+        run: npm run build
+        env:
+          NODE_ENV: production
+ 
+      # ── Step 6: Create deployment archive ───────────────────────
+      - name: Create Deployment Package
+        run: |
+          # Exclude dev files from the archive
+          tar -czf deployment.tar.gz \
+            --exclude='.git' \
+            --exclude='node_modules' \
+            --exclude='.github' \
+            --exclude='*.test.js' \
+            .
+ 
+      # ── Step 7: Copy archive to EC2 via SCP ─────────────────────
+      - name: Copy Files to EC2
+        uses: appleboy/scp-action@master
+        with:
+          host:     ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key:      ${{ secrets.EC2_SSH_KEY }}
+          source:   'deployment.tar.gz,scripts/deploy.sh'
+          target:   '/home/${{ secrets.EC2_USER }}/deployments'
+ 
+      # ── Step 8: SSH into EC2 and run deploy script ───────────────
+      - name: Deploy on EC2
+        uses: appleboy/ssh-action@master
+        with:
+          host:     ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key:      ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd /home/${{ secrets.EC2_USER }}/deployments
+            chmod +x deploy.sh
+            ./deploy.sh
+
+
+scripts/deploy.sh  (runs these scripts inside ec2 mechine automatically)
+=====================================
+#!/bin/bash
+# scripts/deploy.sh
+# This script runs ON EC2 — triggered remotely by GitHub Actions via SSH
+# NO build commands here — only extract + restart
+ 
+set -e    # Exit immediately on any error
+ 
+APP_DIR="/var/www/my-node-app"
+DEPLOY_DIR="/home/$(whoami)/deployments"
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+ 
+echo "[DEPLOY] Starting deployment at $TIMESTAMP"
+ 
+# 1. Ensure app directory exists
+mkdir -p $APP_DIR
+ 
+# 2. Backup current version (optional but recommended)
+if [ -d "$APP_DIR/current" ]; then
+  echo "[DEPLOY] Backing up current version..."
+  cp -r $APP_DIR/current $APP_DIR/backup_$TIMESTAMP
+fi
+ 
+# 3. Extract the new deployment archive
+echo "[DEPLOY] Extracting deployment package..."
+mkdir -p $APP_DIR/current
+tar -xzf $DEPLOY_DIR/deployment.tar.gz -C $APP_DIR/current
+ 
+# 4. Install ONLY production dependencies on EC2
+#    (no build step — just runtime deps)
+echo "[DEPLOY] Installing production dependencies..."
+cd $APP_DIR/current
+npm install --omit=dev
+ 
+# 5. Set environment variables
+export NODE_ENV=production
+export PORT=3000
+export DEPLOYED_AT=$TIMESTAMP
+ 
+# 6. Restart app using PM2
+echo "[DEPLOY] Restarting application with PM2..."
+pm2 delete my-node-app 2>/dev/null || true
+pm2 start ecosystem.config.js --env production
+pm2 save
+ 
+# 7. Clean up old backups (keep last 3)
+echo "[DEPLOY] Cleaning old backups..."
+cd $APP_DIR
+ls -dt backup_* 2>/dev/null | tail -n +4 | xargs rm -rf
+ 
+echo "[DEPLOY] Deployment complete! App is live."
+
+
+One-Time EC2 Server Setup
+==============================================
+
+Run these commands ONCE on your EC2 instance to prepare it for deployments.
+
+Install Node.js (v20 LTS)
+# Connect to your EC2 instance
+ssh -i your-key.pem ubuntu@YOUR_EC2_PUBLIC_IP
+ 
+# Update packages
+sudo apt update && sudo apt upgrade -y
+ 
+# Install Node.js 20 LTS via NodeSource
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs
+ 
+# Verify installation
+node --version   # Should show v20.x.x
+npm  --version   # Should show 10.x.x
+
+Install PM2 (Process Manager)
+# Install PM2 globally
+sudo npm install -g pm2
+ 
+# Make PM2 start on system boot
+pm2 startup systemd
+ 
+# IMPORTANT: Copy and run the command that PM2 prints above
+# It will look like:
+# sudo env PATH=$PATH:/usr/bin /usr/lib/node_modules/pm2/bin/pm2 startup ...
+
+6.3  Create App Directory
+# Create the deployment directories
+sudo mkdir -p /var/www/my-node-app
+sudo chown -R ubuntu:ubuntu /var/www/my-node-app
+ 
+mkdir -p ~/deployments
+
+6.4  (Optional) Install Nginx as Reverse Proxy
+sudo apt install -y nginx
+ 
+# Create Nginx site config
+sudo nano /etc/nginx/sites-available/my-node-app
+ 
+# Paste the following config:
+# -------------------------------------------
+# server {
+#   listen 80;
+#   server_name YOUR_DOMAIN_OR_EC2_IP;
+#
+#   location / {
+#     proxy_pass         http://localhost:3000;
+#     proxy_http_version 1.1;
+#     proxy_set_header   Upgrade $http_upgrade;
+#     proxy_set_header   Connection 'upgrade';
+#     proxy_set_header   Host $host;
+#     proxy_cache_bypass $http_upgrade;
+#   }
+# }
+# -------------------------------------------
+ 
+sudo ln -s /etc/nginx/sites-available/my-node-app /etc/nginx/sites-enabled/
+sudo nginx -t          # Test config
+sudo systemctl restart nginx
+
+
+Setting GitHub Repository Secrets
+===================================================================
+GitHub Actions needs 3 secrets to SSH into your EC2. These are stored encrypted in your GitHub repo.
+
+Navigate to Secrets
+ GitHub repository ---> Settings tab----> Secrets and variables --> Actions---> New repository secret
+
+Required Secrets
+
+Secret Name	Value / Description
+EC2_HOST	Your EC2 Public IP address (e.g. 54.123.45.67) or domain name
+EC2_USER	SSH username — typically: ubuntu (Ubuntu AMI) or ec2-user (Amazon Linux)
+EC2_SSH_KEY	Full content of your .pem private key file (see steps below)
+
+7.3  How to Add the SSH Private Key
+# On your local machine, display the full .pem key content:
+cat ~/.ssh/your-ec2-key.pem
+ 
+# Copy the ENTIRE output including headers:
+# -----BEGIN RSA PRIVATE KEY-----
+# MIIEpAIBAAKCAQEA0Z3VS5JJcds3xHn/ygWep4PAtEsHoazbSJNaB1uAV7bH..
+# -----END RSA PRIVATE KEY-----
+ 
+# Paste this entire block as the value for the EC2_SSH_KEY secret
+
+
+Never commit your .pem key file to the repository. Add *.pem to your .gitignore file.
+ 
+
+.gitignore File
+================================
+# Dependencies
+node_modules/
+ 
+# Build artifacts
+dist/
+build/
+ 
+# Environment variables
+.env
+.env.local
+.env.production
+ 
+# SSH Keys
+*.pem
+*.key
+ 
+# Deployment artifacts
+deployment.tar.gz
+ 
+# OS Files
+.DS_Store
+Thumbs.db
+ 
+# Logs
+*.log
+npm-debug.log*
+logs/
+
+AWS EC2 Security Group Rules
+==================================
+In the AWS Console, configure your EC2 Security Group Inbound Rules:
+
+Port / Type	Source / Purpose
+22 (SSH)	Your IP only — for initial setup and GitHub Actions SSH access
+80 (HTTP)	0.0.0.0/0 — Nginx reverse proxy (public web traffic)
+443 (HTTPS)	0.0.0.0/0 — SSL/TLS (after setting up certificate)
+3000 (Custom TCP)	Your IP only — direct Node.js access during development
+
+IMPORTANT
+Port 22 must allow GitHub Actions runner IPs. The easiest approach is to allow 0.0.0.0/0 for port 22 in a private/test environment, or use GitHub's published IP ranges for tighter security.
+
+Workflow Steps Explained
+===================================
+Step	                             What Happens & Where
+actions/checkout@v4	          GitHub runner clones your full repository code
+actions/setup-node@v4	      GitHub runner installs Node.js 20 (with npm cache)
+npm ci	                      GitHub runner installs ALL dependencies (fast, reproducible)
+npm test	                  GitHub runner executes your test suite. Deploy stops if tests fail
+npm run build                 GitHub runner builds the app. No build happens on EC2
+tar -czf ...	              GitHub runner creates a compressed archive (excluding node_modules)
+appleboy/scp-action	          Archive is copied from GitHub runner to EC2 via secure SCP
+appleboy/ssh-action	          GitHub runner SSHs into EC2 and runs deploy.sh remotely
+deploy.sh on EC2	          EC2 extracts archive, runs npm install --omit=dev, restarts PM2
+
+
+Verify  Deployment
+======================================
+Check PM2 Status (on EC2)
+# List running PM2 apps
+pm2 list
+ 
+# View real-time logs
+pm2 logs my-node-app
+ 
+# View last 100 log lines
+pm2 logs my-node-app --lines 100
+ 
+# Restart manually if needed
+pm2 restart my-node-app
+ 
+# Stop the app
+pm2 stop my-node-app
+
+Test Endpoints
+# Health check
+curl http://YOUR_EC2_IP:3000/health
+ 
+# API info
+curl http://YOUR_EC2_IP:3000/api/info
+ 
+# If using Nginx on port 80
+curl http://YOUR_EC2_IP/health
+
+Check GitHub Actions Logs
+GitHub repository----> Actions tab--->latest workflow run--->see detailed output and any error messages
+
+
+Day-to-Day Push & Deploy Flow
+=======================================================
+# 1. Make changes to your code locally
+git add .
+git commit -m "feat: add new feature"
+git push origin main
+ 
+# 2. GitHub Actions automatically:
+#    - Spins up ubuntu-latest runner
+#    - Runs npm ci  (installs deps)
+#    - Runs npm test (runs tests)
+#    - Runs npm run build
+#    - SCPs archive to EC2
+#    - SSHs into EC2 and runs deploy.sh
+#    - deploy.sh restarts app with PM2
+
+from server,
+curl http://EC2_IP/health
