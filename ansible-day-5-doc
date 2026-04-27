@@ -1,0 +1,35 @@
+#handlers
+
+- hosts: all
+  remote_user: ec2-user
+  become: yes
+  tasks:
+    - name: Copy NGINX config
+      ansible.builtin.template:
+        src: nginx.conf.j2
+        dest: /etc/nginx/nginx.conf
+        validate: /usr/sbin/nginx -t -c %s
+      notify: Force Restart NGINX
+
+  handlers:
+    - name: Force Restart NGINX
+      ansible.builtin.service:
+        name: nginx
+        state: restarted
+---
+
+#loops
+- hosts: all
+  remote_user: ec2-user
+  become: yes
+  tasks:
+  - name: installing the latest version of the packages
+    yum:
+      name: "{{ item }}"
+      state: present
+    loop:
+      - php
+      - mysql
+      - unzip
+      - http_present
+
