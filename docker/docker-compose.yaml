@@ -1,0 +1,282 @@
+#docker-compose.yml
+services:
+  app:
+    image: httpd
+    environment:
+      - DB_HOST=db
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+      POSTGRES_DB: mydb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+---
+#docker-compose.override.yml
+services:
+  app:
+    build: .
+    volumes:
+      - .:/app                 # Live reload: mount source code
+      - /app/node_modules      # Keep container node_modules
+    environment:
+      - NODE_ENV=development
+      - DEBUG=*
+    ports:
+      - '3000:3000'
+      - '9229:9229'            # Node.js debugger port
+
+  db:
+    ports:
+      - '5432:5432'            # Expose DB locally for dev tools
+
+---
+#docker-compose.prod.yml
+services:
+  myapp:
+    image: nginx
+    restart: always
+    environment:
+      - NODE_ENV=production
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+#docker-compose -f docker-compose.prod.yml up -d 
+#docker-compose -f docker-compose.prod.yml down
+
+---
+#multi-dependecies
+services:
+  myapp:
+    image: nginx
+    restart: always
+    environment:
+      - NODE_ENV=production
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    depends_on:
+      db:
+        condition: service_healthy   # Wait for db to be healthy
+      redis:
+        condition: service_started   # Just wait for start
+
+  db:
+    image: postgres:16-alpine
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
+      interval: 10s        # Check every 10 seconds
+      timeout: 5s          # Fail if no response in 5s
+      retries: 5           # Mark unhealthy after 5 failures
+      start_period: 30s    # Grace period on first start
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"] #systemctl status apache2
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+---
+#network-attachment
+services:
+  frontend:
+    image: nginx:alpine
+    networks:
+      - frontend-net
+      - backend-net
+    ports:
+      - '80:80'
+
+  api:
+    image: node:18-alpine
+    command: sh -c "npm install -g json-server && json-server --watch /data/db.json --host 0.0.0.0 --port 3000"
+    volumes:
+      - ./data:/data
+    networks:
+      - backend-net
+      - db-net
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+      POSTGRES_DB: mydb
+    networks:
+      - db-net
+
+networks:
+  frontend-net:
+    driver: bridge
+  backend-net:
+    driver: bridge
+  db-net:
+    driver: bridge
+    internal: true
+---
+
+#volume attachment
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+      POSTGRES_DB: mydb
+    volumes:
+      # Named volume (managed by Docker)
+      - pgdata:/var/lib/postgresql/data
+      # Bind mount (absolute host path)
+      - /host/backups:/backups
+
+volumes:
+  pgdata:
+    driver: local
+    # Use a specific path on the host:
+    driver_opts:
+      type: none
+      o: bind
+      device: /data/postgres
+---
+
+Advanced Compose Features
+1)Environment Variables & .env Files
+=======================================
+
+ env_file:
+      - .env
+
+# .env file (auto-loaded by Compose):
+POSTGRES_USER:postgres
+POSTGRES_PASSWORD:postgres123
+POSTGRES_DB:mydb
+
+# .env.development (load manually):
+POSTGRES_USER=admin
+POSTGRES_PASSWORD=Admin123
+POSTGRES_DB=mypostgresdb
+
+# Load a custom env file:
+docker compose --env-file .env.development up -d
+
+#dynamic env var
+services:
+  app:
+    image: myapp:${APP_VERSION}
+
+#in .env file
+APP_VERSION=v1.2
+
+2)Profiles: Conditional Services
+=====================================
+services:
+  app:
+    image: nginx
+    # No profile = always started
+
+  adminer:
+    image: adminer
+    profiles: [debug]        # Only start with --profile debug
+    ports:
+      - '8080:8080'
+
+  seeder:
+    image: node.js
+    profiles: [tools]
+    command: node scripts/seed.js
+
+docker-compose --profile debug up
+# Usage:
+# docker compose up                    # starts only app
+# docker compose --profile debug up    # starts app + adminer
+# docker compose --profile tools run seeder  # run seeder
+
+3)Resource Limits & Restart Policies
+======================================
+services:
+  app:
+    image: myapp:latest
+    restart: unless-stopped   # always | on-failure | unless-stopped | no
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+4)Extending Services with Anchors
+=======================================
+# Use YAML anchors to avoid repetition:
+x-common: &common
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: '10m'
+      max-file: '3'
+
+services:
+  app:
+    <<: *common
+    image: myapp:latest
+
+  worker:
+    <<: *common
+    image: myapp:latest
+    command: node worker.js
+
+5)password stored as screts
+=============================
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt
+
+services:
+  db:
+    image: postgres
+    secrets:
+      - db_password
+
+example-1
+===========
+version: '3.8'
+
+services:
+  container1:
+    image: nginx:latest
+    ports:
+      - "8001:80"
+
+  container2:
+    image: mysql:latest
+    environment:
+      MYSQL_ROOT_PASSWORD: example
+      MYSQL_DATABASE: mydatabase
+
+  container3:
+    image: ubuntu:latest
+    command: tail -f /dev/null  # Keep the container running indefinitely
+    tty: true  # Allocate a pseudo-TTY
+    stdin_open: true  # Keep STDIN open so you can interact with the container
+
+
+
+

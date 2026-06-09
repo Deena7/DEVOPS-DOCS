@@ -1,0 +1,121 @@
+ANSIBLE-PROJECT:
+================
+ansible-project/
+├── inventory/
+│   └── hosts
+├── group_vars/
+│   └── all.yml
+├── roles/
+│   └── common/
+│       ├── tasks/
+│       │   └── main.yml
+│       ├── handlers/
+│       │   └── main.yml
+│       ├── templates/
+│       │   └── index.html.j2
+│       ├── vars/
+│       │   └── main.yml
+│       └── defaults/
+│           └── main.yml
+└── site.yml
+
+inventory/hosts
+---------------
+[web]
+52.221.246.98 ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/mykey.pem
+
+group_vars/all.yml
+---------------------
+web_port: 80
+server_name: my-devops-server
+packages:
+  - apache2
+  - nmon
+  - ruby-full
+
+Role Defaults (safe fallback values)
+roles/common/defaults/main.yml
+--------------------------------------
+web_root: /var/www/html
+
+Role Variables (internal role config)
+roles/common/vars/main.yml
+--------------------------------
+apache_service: apache2
+
+Tasks (MAIN LOGIC)
+roles/common/tasks/main.yml
+--------------------------------
+---
+- name: Update apt cache
+  apt:
+    update_cache: yes
+
+- name: Install required packages
+  apt:
+    name: "{{ packages }}"
+    state: present
+  notify: Restart Apache
+
+- name: Ensure Apache is running
+  service:
+    name: "{{ apache_service }}"
+    state: started
+    enabled: yes
+
+- name: Deploy Apache template
+  template:
+    src: index.html.j2
+    dest: "{{ web_root }}/index.html"
+  notify: Restart Apache
+
+- name: Verify Apache service
+  command: systemctl is-active apache2
+  register: apache_status
+
+- name: Show Apache status
+  debug:
+    msg: "Apache is {{ apache_status.stdout }}"
+
+Handlers (Triggered only when needed)
+roles/common/handlers/main.yml
+-------------------------------
+---
+- name: Restart Apache
+  service:
+    name: apache2
+    state: restarted
+
+Template (Dynamic Web Page)
+roles/common/templates/index.html.j2
+-------------------------------------
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{ server_name }}</title>
+</head>
+<body>
+    <h1>🚀 Ansible Deployed Server</h1>
+    <p>Server Name: {{ server_name }}</p>
+    <p>Apache Port: {{ web_port }}</p>
+    <p>Installed via Ansible Roles</p>
+
+    <h2>Installed Components:</h2>
+    <ul>
+        {% for pkg in packages %}
+        <li>{{ pkg }}</li>
+        {% endfor %}
+    </ul>
+</body>
+</html>
+
+site.yml
+---
+- name: Production Setup
+  hosts: web
+  become: yes
+
+  roles:
+    - common
+
+  #ansible-playbook -i inventory/hosts site.yml

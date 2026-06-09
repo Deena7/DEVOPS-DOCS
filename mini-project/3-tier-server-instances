@@ -1,0 +1,239 @@
+3-TIER ARCHITECTURE WITH 3 INSTANCES (LEVEL-2)
+====================================
+
+3-tier-project/
+├── frontend/ (EC2 #1)
+│   ├── index.html          # Your UI and Fetch logic
+│   └── (Nginx config)      # Located at /etc/nginx/sites-available/default
+│
+├── backend/ (EC2 #2)
+│   ├── package.json        # Project metadata and dependencies (express, mongoose)
+│   ├── server.js           # Your Node.js API and DB connection logic
+│   └── node_modules/       # Installed packages (auto-generated)
+│
+└── database/ (EC2 #3)
+    └── (Mongo config)      # Located at /etc/mongodb.conf
+
+
+
+server-1 [webserver]
+=========
+sudo apt update -y
+sudo apt install -y nginx
+sudo mkdir -p /var/www/frontend
+sudo vi /var/www/frontend/index.html
+
+=====index.html========
+<h2>Login to Level 1 System</h2>
+<form id="loginForm">
+    <input type="text" id="user" placeholder="Enter Username" required><br><br>
+    <input type="password" id="pass" placeholder="Enter Password" required><br><br>
+    <button type="submit">Submit to Database</button>
+</form>
+
+<script>
+    document.getElementById('loginForm').onsubmit = async (e) => {
+        e.preventDefault();
+        const username = document.getElementById('user').value;
+        const password = document.getElementById('pass').value;
+
+        const response = await fetch('/api/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+        const result = await response.json();
+        alert(result.message);
+    };
+</script>
+
+sudo vi /etc/nginx/sites-available/default
+-------------------------------------------
+server {
+    listen 80;
+    server_name _;
+
+    # 1. Path to your HTML/Login page  
+    root /var/www/frontend;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+
+    # 2. Proxy to the BACKEND EC2 (Tier 2)
+    location /api/ {
+        proxy_pass http://172.31.31.114:5000;   # REPLACE with the Private IP of your Backend Instance
+ 
+
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+}
+
+systemctl restart nginx
+
+
+
+
+SERVER-2 [APPSERVER]
+===================================================================================================
+apt-get update -y
+sudo apt install -y nodejs npm
+sudo mkdir -p /opt/backend
+cd /opt/backend
+# Create the package.json and install tools
+sudo npm init -y
+sudo npm install express mongoose
+sudo npm install -g pm2  
+# Create the server code
+cd /opt/backend
+vi server.js
+
+=====server.js======
+
+const express = require('express');
+const mongoose = require('mongoose');
+
+const app = express(); 
+app.use(express.json()); 
+
+// --- CONFIGURATION ---
+const PORT = 5000;
+const DB_PRIVATE_IP = "172.31.19.93";    //REPLACE DB PRIVATE IP
+const DB_NAME = "level1_db";
+
+// --- DATABASE CONNECTION ---
+mongoose.connect(`mongodb://appServer:password123@${DB_PRIVATE_IP}:27017/${DB_NAME}?authSource=level1_db`)
+    .then(() => console.log("✅ Successfully connected to MongoDB"))
+    .catch(err => console.error("❌ MongoDB connection error:", err));
+
+// --- SCHEMA & MODELS ---
+const UserSchema = new mongoose.Schema({
+    username: { type: String, required: true },
+    password: { type: String, required: true }, // Stored as plain text
+    createdAt: { type: Date, default: Date.now }
+});
+
+const User = mongoose.model('User', UserSchema);
+
+// --- ROUTES ---
+
+// POST: Create a new user
+app.post('/api/login', async (req, res) => {
+    try {
+        const { username, password } = req.body;
+        const newUser = new User({ username, password });
+        await newUser.save();
+        res.status(201).json({ status: "Success", message: `User ${username} saved!` });
+    } catch (err) {
+        res.status(500).json({ status: "Error", message: err.message });
+    }
+});
+
+// GET: Health Check
+app.get('/api/status', (req, res) => {
+    res.json({ 
+        service: "Backend Online", 
+        database: mongoose.connection.readyState === 1 ? "Connected" : "Disconnected" 
+    });
+});
+
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 Server running on http://0.0.0.0:${PORT}`);
+});
+
+====package.json=====
+
+{
+  "name": "three-tier-backend",
+  "version": "1.0.0",
+  "description": "Secure 3-tier Node.js Backend",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "bcrypt": "^5.1.1",
+    "express": "^4.18.2",
+    "mongoose": "^8.0.0"
+  }
+}
+
+pm2 list
+pm2 start server.js
+
+SERVER-3 [DB-SERVER]
+=================================================
+sudo apt update
+# Add MongoDB repo and install (Hard Way again)
+curl -fsSL https://pgp.mongodb.com/server-6.0.asc | sudo gpg --dearmor -o /usr/share/keyrings/mongodb-server-6.0.gpg
+
+echo "deb [ arch=amd64 signed-by=/usr/share/keyrings/mongodb-server-6.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/6.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-6.0.list
+
+sudo apt update -y
+sudo apt install -y mongodb-org
+sudo systemctl start mongod
+sudo systemctl enable mongod
+sudo systemctl status mongod
+
+
+sudo nano /etc/mongod.conf  [ bind_ip line and change it to: bind_ip = 0.0.0.0]
+
+sudo systemctl restart mongod
+
+sudo ss -tulpn | grep 27017
+mongosh
+show dbs
+show users
+use level1_db
+
+db.createUser({
+  user: "appServer",
+  pwd: "password123",
+  roles: [
+    { role: "readWrite", db: "level1_db" },
+    { role: "read", db: "admin" } // Optional: add additional permissions
+  ]
+})
+
+use level1_db;
+// 2. List the "Tables" (Collections)
+show collections
+// You should see 'users' listed here.
+
+// 3. View the data (The "Table" content)
+db.users.find().pretty()
+
+
+
+exit
+sudo systemctl restart mongod
+mongosh -u "appServer" -p "password123" --authenticationDatabase "level1_db"
+
+sudo systemctl status mongod
+sudo journalctl -u mongod
+
+
+from webserver
+=================
+curl http://172.31.31.114:5000/api/status
+
+===========================================================
+# Log in using the appServer user
+
+curl http://172.31.19.123:5000; =====> from webserver
+(appserver)
+cd /opt/backend
+npm install 
+pm2 start server.js
+ss -tulnp | grep 5000
+curl http://localhost:5000/api/status
+#from server-3(db)
+=====================
+use level1_db;
+db.users.find().pretty()
+

@@ -1,0 +1,106 @@
+1. pre-commit — Runs before a commit is created
+================
+Use it to lint code, run tests, or check formatting.
+-in below script,avoid to commit a file with white space in every line of code
+
+# .git/hooks/pre-commit
+# make a script with tail white space and without whitespace
+#!/bin/sh
+
+echo "Running pre-commit checks..."
+
+# Example: Prevent committing if there are trailing whitespaces
+if grep -rn " $" --include="*.js" .; then
+  echo "❌ Error: Trailing whitespace found. Fix before committing."
+  exit 1  # Non-zero exit cancels the commit
+fi
+
+echo "✅ Pre-commit checks passed."
+exit 0
+
+2. commit-msg: — Validates the commit message
+===============
+Enforce conventions like Conventional Commits or ticket numbers.
+# .git/hooks/commit-msg
+# git commit -m "feat: new update" ✅.but "feat: new update"❌
+#!/bin/sh
+
+COMMIT_MSG_FILE=$1
+COMMIT_MSG=$(cat "$COMMIT_MSG_FILE")
+
+# Example: Enforce format like "feat: add login page" or "fix: null pointer"
+PATTERN="^(feat|fix|docs|style|refactor|test|chore): .+"
+
+if ! echo "$COMMIT_MSG" | grep -qE "$PATTERN"; then
+  echo "❌ Bad commit message: '$COMMIT_MSG'"
+  echo "   Format must be: <type>: <description>"
+  echo "   Types: feat, fix, docs, style, refactor, test, chore"
+  exit 1
+fi
+
+echo "✅ Commit message is valid."
+exit 0
+
+
+3. pre-push — Runs before pushing to remote
+==============
+Good for running full test suites before code reaches the server.
+#create file.js
+# .git/hooks/pre-push
+#!/bin/sh
+
+echo "Running tests before push..."
+
+# Example: Run npm tests and block push if they fail
+npm init -y
+npm test
+
+if [ $? -ne 0 ]; then
+  echo "❌ Tests failed. Push aborted."
+  exit 1
+fi
+
+echo "✅ All tests passed. Pushing..."
+exit 0
+
+4. post-commit — Runs after a commit is made
+=================
+The post-commit hook runs after a commit is successfully created, typically for logging, notifications, or non-critical follow-up tasks.
+Useful for notifications or logging (can't cancel the commit).
+# .git/hooks/post-commit
+#!/bin/sh
+
+# Example: Log commit info to a file
+COMMIT_HASH=$(git rev-parse --short HEAD)
+COMMIT_MSG=$(git log -1 --pretty=%B)
+echo "[$( date )] $COMMIT_HASH - $COMMIT_MSG" >> ~/commit-log.txt
+
+echo "📝 Commit logged."
+
+
+5. pre-merge-commit — Runs before a merge commit
+==========================
+Prevents problematic or unauthorized merges before the merge commit is created, enforcing team workflows and branch protection rules.
+Prevent merging branches that don't meet standards.
+# .git/hooks/pre-merge-commit
+#!/bin/sh
+
+echo "Checking branch before merge..."
+
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+
+# Example: Block merging directly into main
+if [ "$BRANCH" = "main" ]; then
+  echo "❌ Direct merges into 'main' are not allowed. Use a PR."
+  exit 1
+fi
+
+exit 0
+
+
+
+
+
+
+
+
