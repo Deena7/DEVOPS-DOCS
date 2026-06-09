@@ -1,0 +1,179 @@
+#ingress/home_ingress.yaml
+# ========================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+  name: home-ingress
+  namespace: devops-demo
+
+spec:
+  ingressClassName: nginx
+
+  rules:
+  - host: deena.work.gd
+    http:
+      paths:
+      - path: /home
+        pathType: Prefix
+        backend:
+          service:
+            name: nginx-service
+            port:
+              number: 80
+
+---
+
+#ingress/payment_ingress.yaml
+#=============================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: payment-ingress
+  namespace: app-demo
+
+spec:
+  ingressClassName: nginx
+
+  rules:
+  - host: deena.work.gd
+    http:
+      paths:
+      - path: /payment
+        pathType: Prefix
+        backend:
+          service:
+            name: apache-service
+            port:
+              number: 80
+
+---
+
+#services/home_service.yaml
+#===================
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-service
+  namespace: devops-demo
+
+spec:
+  selector:
+    app: nginx
+
+  ports:
+  - port: 80
+    targetPort: 80
+
+  type: ClusterIP
+
+---
+
+#services/payment_service.yaml
+#=======================
+apiVersion: v1
+kind: Service
+metadata:
+  name: apache-service
+  namespace: app-demo
+
+spec:
+  selector:
+    app: apache
+
+  ports:
+  - port: 80
+    targetPort: 80
+
+  type: ClusterIP
+
+---
+
+#deployment/home_deployment.yaml
+#=======================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment
+  namespace: devops-demo
+
+spec:
+  replicas: 3
+
+  selector:
+    matchLabels:
+      app: nginx
+
+  template:
+    metadata:
+      labels:
+        app: nginx
+
+    spec:
+      containers:
+      - name: nginx
+        image: nginx
+        ports:
+        - containerPort: 80
+
+---
+#deployment/payment_deployment.yaml
+#=======================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: apache-deployment
+  namespace: app-demo
+
+spec:
+  replicas: 2
+
+  selector:
+    matchLabels:
+      app: apache
+
+  template:
+    metadata:
+      labels:
+        app: apache
+
+    spec:
+      containers:
+      - name: apache
+        image: httpd
+        ports:
+        - containerPort: 80
+
+#configure route-54 with proper domain name with k3s server ip (deena.work.gd)
+
+
+#curl http://deena.work.gd/home
+#curl http://deena.work.gd/payment
+#kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deplic/provider/cloud/deploy.yaml
+#kubectl get ingress -A
+#kubectl edit ingress nginx-ingress -n devops-demo     ===> change treafik to nginx
+#kubectl get deployment -n devops-demo
+#kubectl get pods -n devops-demo
+#kubectl get svc -n devops-demo
+#sudo netstat -tulpn | grep 8080
+#sudo ss -tulpn | grep 8080
+#curl http://deena.work.gd
+#curl -H "Host: deena.work.gd" http://localhost
+#kubectl get endpoints -n devops-demo
+#kubectl get endpoints -n app-demo
+#The Ingress Controller and application do not need to be in the same namespace.
+#but the ingress on the rules and service must be same namespace
+#kubectl delete ns devops-demo (delete all resources runs under ns)
+#kubectl delete ns app-demo
+#kubectl delete ns ingress-nginx
+#kubectl delete ingressclass nginx
+
+
+
+
+
+
+  
+
+

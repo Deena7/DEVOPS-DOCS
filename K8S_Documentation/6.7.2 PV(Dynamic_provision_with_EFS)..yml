@@ -1,0 +1,63 @@
+REQUIREMENTS:
+#1)EC2 MECHINE WITH ROLE(AMAZONEFSCSIDRIVERPOLICY)
+#2)EFS SERVICE WITH SAME VPC RUNNING ON EC2 AND EFS FILE SYSTEM SECURITY GROUP WITH NFS PROTOCOL
+#3)INSIDE EC2 SERVICE INSTALL AWS-EFS-DRIVER IN K3S SERVER(COMMENDS BELOW)(if not works install nfs-common package inside mechine)
+
+#curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+#chmod 700 get_helm.sh
+#./get_helm.sh
+#kubectl apply -k "github.com/kubernetes-sigs/aws-efs-csi-driver/deploy/kubernetes/overlays/stable/?ref=release-2.0"
+
+
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: efs-sc
+provisioner: efs.csi.aws.com
+parameters:
+  provisioningMode: efs-ap
+  fileSystemId: fs-0ce3dbbce8268331b # Replace with your EFS ID
+  directoryPerms: "700"
+reclaimPolicy: Delete # Dynamically provisioned PVs will delete EFS access points when PVC is deleted
+volumeBindingMode: Immediate
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: efs-pvc
+spec:
+  accessModes:
+    - ReadWriteMany # EFS supports multi-node read/write
+  storageClassName: efs-sc
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dynamic-nginx
+spec:
+  replicas: 5 # Testing ReadWriteMany across replicas
+  selector:
+    matchLabels:
+      app: dynamic-web
+  template:
+    metadata:
+      labels:
+        app: dynamic-web
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: efs-storage
+              mountPath: /usr/share/nginx/html
+      volumes:
+        - name: efs-storage
+          persistentVolumeClaim:
+            claimName: efs-pvc
+
+#create services (node port or cluster ip for ease of understanding)

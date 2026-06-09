@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: nginx-deployment
+  namespace: devops-demo
+
+spec:
+  replicas: 3
+
+  selector:
+    matchLabels:
+      app: nginx
+
+  template:
+    metadata:
+      labels:
+        app: nginx
+
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.27
+        ports:
+        - containerPort: 80
+
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+
+          initialDelaySeconds: 10
+          periodSeconds: 5
+
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+
+          initialDelaySeconds: 5
+          periodSeconds: 5
+
+#4.PROBES:
+#==============
+#The Startup Probe:
+ # The startup probe only checks if our application has finished loading its initial files, databases, or frameworks. 
+ # Its only job is to say, "I am done booting up." (And its stop other liveness and readiness probes during checking periods)
+
+#The Liveness Probe : It checks during container running time, and if it fails, it restarts the container. It runs continuously. 
+#If our app freezes or breaks completely, it forces a restart to fix it.
+
+#The Readiness Probe:
+ #our application code must tell the probe that it is overwhelmed. our app gets too much traffic, our code must be programmed to return 
+ #an error (like an HTTP 503) to the readiness probe. When the probe sees that error(happen in container), it will immediately stop sending 
+ #traffic to that container until the app cools down. 
+
+ #If a Pod has 3 containers, and just one container fails its readiness probe, 
+ #Kubernetes will pull the entire Pod out of the network service.No traffic will be sent to any container in that Pod until that one 
+ #broken container becomes healthy again.

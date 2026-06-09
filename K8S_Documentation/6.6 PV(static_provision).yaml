@@ -1,0 +1,56 @@
+#mkdir -p /mnt/static-data
+#echo "HERE IS MY STATIC PROVISION VOLUME CONTENT" > /mnt/static-data/index.html
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: static-pv
+spec:
+  capacity:
+    storage: 1Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain # Keeps data intact if PVC is deleted
+  storageClassName: local-storage
+  hostPath:
+    path: /mnt/static-data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: static-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-storage
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: static-nginx
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: static-web
+  template:
+    metadata:
+      labels:
+        app: static-web
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: web-storage
+              mountPath: /usr/share/nginx/html
+      volumes:
+        - name: web-storage
+          persistentVolumeClaim:
+            claimName: static-pvc
