@@ -1,0 +1,76 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-headless
+  labels:
+    app: nginx
+spec:
+  ports:
+  - name: web
+    port: 80              # Web traffic port
+    targetPort: 80
+  clusterIP: None         # Disables standard load balancing -> Activates Headless DNS
+  selector:
+    app: nginx
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: nginx-web
+spec:
+  serviceName: "nginx-headless" # Matches the Headless Service name perfectly
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:latest
+        env:
+        - name: New_env_1
+          value: New_env_2
+        ports:
+        - containerPort: 80
+          name: web
+
+---
+
+#example:2
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: web
+spec:
+  selector:
+    matchLabels:
+      app: nginx
+  serviceName: "nginx" # Links to the headless service
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx
+        image: registry.k8s.io/nginx-slim:0.24
+        volumeMounts:
+        - name: www
+          mountPath: /usr/share/nginx/html
+  volumeClaimTemplates: # Automatically provisions unique storage per pod
+  - metadata:
+      name: www
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 1Gi
+
+#pods require a fixed identity, dedicated persistent disks that survive deletion/recreation, and precise startup/shutdown ordering.
+#each pods gets individual dns:   [Pod Name]-[Number].[Headless Service Name].[Namespace].svc.cluster.local
