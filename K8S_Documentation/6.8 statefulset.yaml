@@ -27,7 +27,7 @@ spec:
     metadata:
       labels:
         app: nginx
-    spec:
+    spec:       
       containers:
       - name: nginx
         image: nginx:latest
@@ -37,6 +37,18 @@ spec:
         ports:
         - containerPort: 80
           name: web
+        volumeMounts:
+        - name: www
+          mountPath: /usr/share/nginx/html
+  volumeClaimTemplates: # Automatically provisions unique storage per pod
+  - metadata:
+      name: www
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 1Gi
+        
 
 ---
 
